@@ -100,7 +100,10 @@ async def ticker():
         await asyncio.sleep(0.5)
 
 
-async def main():
+async def serve(updater=None):
+    """Start the WS + HTTP transports. If ``updater`` (an async coroutine) is
+    given it runs alongside; otherwise shapes are expected to be pushed via
+    ``set_shapes`` from elsewhere (e.g. live_overlay.py's capture thread)."""
     try:
         import websockets
     except ImportError:
@@ -110,9 +113,16 @@ async def main():
     threading.Thread(target=run_http, daemon=True).start()
     async with websockets.serve(ws_handler, HOST, WS_PORT):
         print(f"draw server up:")
-        print(f"  ws   -> ws://{HOST}:{WS_PORT}            (console / github)")
-        print(f"  http -> http://{HOST}:{HTTP_PORT}/shapes  (extension on slither.io)")
-        await ticker()
+        print(f"  ws   -> ws://{HOST}:{WS_PORT}            (extension service worker / console)")
+        print(f"  http -> http://{HOST}:{HTTP_PORT}/shapes  (fetch fallback)")
+        if updater is not None:
+            await updater()
+        else:
+            await asyncio.Future()
+
+
+async def main():
+    await serve(ticker)
 
 
 if __name__ == "__main__":
