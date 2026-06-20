@@ -1,18 +1,12 @@
-// slitherbot overlay — content-script version (load via chrome://extensions).
+// slitherbot overlay — content script (drawing only).
 //
-// Draws an overlay canvas on top of slither.io and fills it from the local
-// draw server. It POLLS http://127.0.0.1:8766/shapes with fetch rather than
-// using a WebSocket, because:
-//   - slither blocks page-context WebSockets, and
-//   - a content-script WebSocket is STILL checked against the page CSP, but
-//   - a content-script `fetch` is NOT (it uses the extension's net stack).
-// So fetch-polling is the transport that actually gets through on slither.io.
+// The network lives in background.js (service worker) to get past slither's
+// page CSP and Chrome's Private Network Access loopback block. This script
+// just draws an overlay canvas and fills it from shapes relayed over a
+// runtime Port from the SW.
 
 (function () {
-  const URL = "http://127.0.0.1:8766/shapes";
-  const POLL_MS = 100; // 10 Hz; plenty for an overlay
   const ID = "slitherbot-overlay";
-
   if (document.getElementById(ID)) return;
 
   const cv = document.createElement("canvas");
@@ -62,18 +56,26 @@
   }
   requestAnimationFrame(draw);
 
-  async function poll() {
+  function connectPort() {
+    let port;
     try {
-      const res = await fetch(URL, { cache: "no-store" });
-      const msg = await res.json();
-      if (msg.type === "draw" && Array.isArray(msg.shapes)) shapes = msg.shapes;
-      linkState = "ok";
+      port = chrome.runtime.connect({ name: "overlay" });
     } catch (e) {
       linkState = "down";
+      return setTimeout(connectPort, 1500);
     }
+    port.onMessage.addListener((msg) => {
+      if (msg && msg.type === "draw" && Array.isArray(msg.shapes)) {
+        shapes = msg.shapes;
+        linkState = "ok";
+      }
+    });
+    port.onDisconnect.addListener(() => {
+      linkState = "down";
+      setTimeout(connectPort, 1500); // SW recycled -> reconnect
+    });
   }
-  setInterval(poll, POLL_MS);
-  poll();
+  connectPort();
 
-  console.log("[slitherbot] overlay content-script active, polling " + URL);
+  console.log("[slitherbot] overlay content-script active (network via service worker)");
 })();

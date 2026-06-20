@@ -1,8 +1,11 @@
 {
   "manifest_version": 3,
   "name": "slitherbot overlay",
-  "version": "0.1",
-  "description": "Draws slitherbot detections over slither.io via a local WebSocket. Runs as a content script so it bypasses the page's CSP / WebSocket restrictions.",
+  "version": "0.3",
+  "description": "Draws slitherbot detections over slither.io. The background service worker holds the WebSocket to the local draw server (exempt from page CSP and Private Network Access) and relays shapes to the on-page overlay.",
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": [
@@ -16,9 +19,9 @@
     }
   ],
   "host_permissions": [
-    "http://127.0.0.1/*",
-    "http://localhost/*",
     "ws://127.0.0.1/*",
-    "ws://localhost/*"
+    "ws://localhost/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
   ]
 }
