@@ -1,60 +1,103 @@
-"""WebSocket draw server — streams overlay shapes to the in-page JS client.
+"""Draw server — serves overlay shapes over BOTH WebSocket and HTTP.
 
-This is the "painting back to the page" channel: Python decides what to draw,
-the browser overlay (bridge/overlay_client.js) renders it. For now it just
-streams a red box at screen center with a live counter, to prove the pipe.
-Later this carries real detections from the perceiver.
+Why two transports:
+  - WebSocket (ws://127.0.0.1:8765) — low latency; works from pages that allow
+    it (e.g. github) and from the console.
+  - HTTP poll (http://127.0.0.1:8766/shapes) — works from a browser EXTENSION
+    content script even on slither.io. slither blocks page-context WebSockets,
+    and a content-script WebSocket is still checked against the page CSP, but a
+    content-script `fetch` is not. So the extension polls this endpoint.
 
-Setup:
-    pip install websockets
+Both serve the same shared state. For now it's a red center box with a live
+counter; later this carries real detections.
 
-Run:
-    python bridge/draw_server.py
-    # then open slither.io, F12 console, paste bridge/overlay_client.js
-
-Shapes are relative (0..1) so they map to any viewport size:
-    {"kind":"rect","x":0.5,"y":0.5,"w":0.15,"h":0.12,"color":"#ff0000",
-     "label":"CENTER","lineWidth":3}   # x,y = box center
+Setup:  pip install websockets
+Run:    python bridge/draw_server.py
 """
 
 import asyncio
 import json
 import logging
 import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-# Quiet the noisy "did not receive a valid HTTP request" tracebacks from port
-# probes / scanners hitting the listening socket — not real WS clients.
-logging.getLogger("websockets").setLevel(logging.CRITICAL)
+logging.getLogger("websockets").setLevel(logging.CRITICAL)  # hush port-scan noise
 
-# Bind IPv4 loopback explicitly. Using "localhost" is a trap on Windows: it
-# can resolve to IPv6 ::1 while the browser connects to 127.0.0.1 (or vice
-# versa) and they never meet. Pin both ends to 127.0.0.1 to avoid that.
-HOST = "127.0.0.1"
-PORT = 8765
+HOST = "127.0.0.1"   # pin IPv4 (localhost can resolve to ::1 and miss the browser)
+WS_PORT = 8765
+HTTP_PORT = 8766
 
-
-def center_box(label: str) -> dict:
-    return {
-        "type": "draw",
-        "shapes": [{
-            "kind": "rect", "x": 0.5, "y": 0.5, "w": 0.15, "h": 0.12,
-            "color": "#ff0000", "label": label, "lineWidth": 3,
-        }],
-    }
+_state = {"type": "draw", "shapes": []}
+_lock = threading.Lock()
 
 
-async def handler(ws, *_):  # *_ tolerates the older (ws, path) signature
-    print("client connected")
-    i = 0
+def set_shapes(shapes):
+    with _lock:
+        _state["shapes"] = shapes
+
+
+def state_json() -> str:
+    with _lock:
+        return json.dumps(_state)
+
+
+def center_box(label: str):
+    return [{"kind": "rect", "x": 0.5, "y": 0.5, "w": 0.15, "h": 0.12,
+             "color": "#ff0000", "label": label, "lineWidth": 3}]
+
+
+# ---------- HTTP (for the extension content script to poll) ----------
+
+class _Handler(BaseHTTPRequestHandler):
+    def _cors(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.end_headers()
+
+    def do_GET(self):
+        if self.path.startswith("/shapes"):
+            body = state_json().encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self._cors()
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self._cors()
+            self.end_headers()
+
+    def log_message(self, *args):  # silence per-request logging
+        pass
+
+
+def run_http():
+    ThreadingHTTPServer((HOST, HTTP_PORT), _Handler).serve_forever()
+
+
+# ---------- WebSocket (for console / permissive pages) ----------
+
+async def ws_handler(ws, *_):
     try:
         while True:
-            await ws.send(json.dumps(center_box(f"CENTER {i}")))
-            i += 1
-            await asyncio.sleep(0.5)  # visible live updates
+            await ws.send(state_json())
+            await asyncio.sleep(0.2)
     except Exception:
         pass
-    finally:
-        print("client disconnected")
+
+
+async def ticker():
+    i = 0
+    while True:
+        set_shapes(center_box(f"CENTER {i}"))
+        i += 1
+        await asyncio.sleep(0.5)
 
 
 async def main():
@@ -64,10 +107,12 @@ async def main():
         print("websockets not installed.  Run:  pip install websockets")
         sys.exit(1)
 
-    async with websockets.serve(handler, HOST, PORT):
-        print(f"draw server: ws://{HOST}:{PORT}")
-        print("paste bridge/overlay_client.js into the slither.io console to see the box.")
-        await asyncio.Future()  # run forever
+    threading.Thread(target=run_http, daemon=True).start()
+    async with websockets.serve(ws_handler, HOST, WS_PORT):
+        print(f"draw server up:")
+        print(f"  ws   -> ws://{HOST}:{WS_PORT}            (console / github)")
+        print(f"  http -> http://{HOST}:{HTTP_PORT}/shapes  (extension on slither.io)")
+        await ticker()
 
 
 if __name__ == "__main__":

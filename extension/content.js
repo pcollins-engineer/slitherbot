@@ -1,18 +1,19 @@
 // slitherbot overlay — content-script version (load via chrome://extensions).
 //
-// Same overlay as bridge/overlay_client.js, but run as an extension content
-// script. It executes in the extension's ISOLATED WORLD, which:
-//   - is NOT subject to the page's Content-Security-Policy, and
-//   - uses its own native WebSocket (so a page that monkeypatches/blocks
-//     window.WebSocket can't stop it).
-// That's why this connects to ws://127.0.0.1:8765 on slither.io while a
-// console-pasted script does not.
+// Draws an overlay canvas on top of slither.io and fills it from the local
+// draw server. It POLLS http://127.0.0.1:8766/shapes with fetch rather than
+// using a WebSocket, because:
+//   - slither blocks page-context WebSockets, and
+//   - a content-script WebSocket is STILL checked against the page CSP, but
+//   - a content-script `fetch` is NOT (it uses the extension's net stack).
+// So fetch-polling is the transport that actually gets through on slither.io.
 
 (function () {
-  const WS_URL = "ws://127.0.0.1:8765";
+  const URL = "http://127.0.0.1:8766/shapes";
+  const POLL_MS = 100; // 10 Hz; plenty for an overlay
   const ID = "slitherbot-overlay";
 
-  if (document.getElementById(ID)) return; // already injected
+  if (document.getElementById(ID)) return;
 
   const cv = document.createElement("canvas");
   cv.id = ID;
@@ -27,7 +28,7 @@
 
   let shapes = [{ kind: "rect", x: 0.5, y: 0.5, w: 0.15, h: 0.12,
                   color: "#ff0000", label: "CENTER", lineWidth: 3 }];
-  let wsState = "connecting";
+  let linkState = "connecting";
 
   function resize() {
     const dpr = window.devicePixelRatio || 1;
@@ -54,33 +55,25 @@
         ctx.fillText(s.label, x - w / 2, y - h / 2 - 6);
       }
     }
-    ctx.fillStyle = wsState === "open" ? "#00ff66" : "#ffaa00";
+    ctx.fillStyle = linkState === "ok" ? "#00ff66" : "#ffaa00";
     ctx.font = "13px monospace";
-    ctx.fillText("slitherbot overlay (extension) | ws: " + wsState, 8, 16);
+    ctx.fillText("slitherbot overlay (extension) | link: " + linkState, 8, 16);
     requestAnimationFrame(draw);
   }
   requestAnimationFrame(draw);
 
-  function connect() {
-    let ws;
+  async function poll() {
     try {
-      ws = new WebSocket(WS_URL);
+      const res = await fetch(URL, { cache: "no-store" });
+      const msg = await res.json();
+      if (msg.type === "draw" && Array.isArray(msg.shapes)) shapes = msg.shapes;
+      linkState = "ok";
     } catch (e) {
-      wsState = "error";
-      return setTimeout(connect, 2000);
+      linkState = "down";
     }
-    wsState = "connecting";
-    ws.onopen = () => { wsState = "open"; };
-    ws.onclose = () => { wsState = "closed"; setTimeout(connect, 2000); };
-    ws.onerror = () => { wsState = "error"; };
-    ws.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data);
-        if (msg.type === "draw" && Array.isArray(msg.shapes)) shapes = msg.shapes;
-      } catch (e) { /* ignore */ }
-    };
   }
-  connect();
+  setInterval(poll, POLL_MS);
+  poll();
 
-  console.log("[slitherbot] overlay content-script active (isolated world) -> " + WS_URL);
+  console.log("[slitherbot] overlay content-script active, polling " + URL);
 })();
