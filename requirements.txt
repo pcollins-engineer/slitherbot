@@ -2,3 +2,4 @@ opencv-python
 pillow
 numpy
 dxcam ; sys_platform == "win32"   # Desktop Duplication capture (live_view.py, capture tests)
+websockets                        # bridge/draw_server.py -> in-page overlay
