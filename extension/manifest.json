@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "slitherbot overlay",
+  "version": "0.1",
+  "description": "Draws slitherbot detections over slither.io via a local WebSocket. Runs as a content script so it bypasses the page's CSP / WebSocket restrictions.",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://slither.io/*",
+        "*://*.slither.io/*",
+        "*://slither.com/*",
+        "*://*.slither.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "ws://127.0.0.1/*",
+    "ws://localhost/*"
+  ]
+}
