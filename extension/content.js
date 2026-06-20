@@ -41,16 +41,31 @@
     const W = window.innerWidth, H = window.innerHeight;
     ctx.clearRect(0, 0, W, H);
     for (const s of shapes) {
-      if (s.kind !== "rect") continue;
-      const x = (s.x ?? 0.5) * W, y = (s.y ?? 0.5) * H;
-      const w = (s.w ?? 0.1) * W, h = (s.h ?? 0.1) * H;
-      ctx.lineWidth = s.lineWidth || 3;
-      ctx.strokeStyle = s.color || "#ff0000";
-      ctx.strokeRect(x - w / 2, y - h / 2, w, h);
-      if (s.label) {
-        ctx.fillStyle = s.color || "#ff0000";
-        ctx.font = "16px monospace";
-        ctx.fillText(s.label, x - w / 2, y - h / 2 - 6);
+      if (s.kind === "rect") {
+        const x = (s.x ?? 0.5) * W, y = (s.y ?? 0.5) * H;
+        const w = (s.w ?? 0.1) * W, h = (s.h ?? 0.1) * H;
+        ctx.lineWidth = s.lineWidth || 3;
+        ctx.strokeStyle = s.color || "#ff0000";
+        ctx.strokeRect(x - w / 2, y - h / 2, w, h);
+        if (s.label) {
+          ctx.fillStyle = s.color || "#ff0000";
+          ctx.font = "16px monospace";
+          ctx.fillText(s.label, x - w / 2, y - h / 2 - 6);
+        }
+      } else if (s.kind === "arrow") {
+        const x1 = (s.x1 ?? 0) * W, y1 = (s.y1 ?? 0) * H;
+        const x2 = (s.x2 ?? 0) * W, y2 = (s.y2 ?? 0) * H;
+        ctx.strokeStyle = s.color || "#ffffff";
+        ctx.lineWidth = s.lineWidth || 2;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        const ang = Math.atan2(y2 - y1, x2 - x1), hl = 9;
+        ctx.beginPath();
+        ctx.moveTo(x2, y2);
+        ctx.lineTo(x2 - hl * Math.cos(ang - 0.4), y2 - hl * Math.sin(ang - 0.4));
+        ctx.moveTo(x2, y2);
+        ctx.lineTo(x2 - hl * Math.cos(ang + 0.4), y2 - hl * Math.sin(ang + 0.4));
+        ctx.stroke();
       }
     }
     ctx.fillStyle = linkState === "ok" ? "#00ff66" : "#ffaa00";
