@@ -8,3 +8,8 @@ filters/*.json
 screenshots/*
 !screenshots/.gitkeep
 dataset/
+
+# Capture outputs (desktop screenshots / benchmark frames)
+dd_capture_test.png
+capture_bench/
+capture_60fps/
