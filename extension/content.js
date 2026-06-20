@@ -7,13 +7,10 @@
 
 (function () {
   const ID = "slitherbot-overlay";
-  // The page has a banner at the top of the viewport; the game canvas sits
-  // BELOW it. The capture region starts at the game canvas, so shapes are
-  // relative to the canvas — draw them into the canvas sub-rect (offset down
-  // by the banner height and scaled to the remaining height), not the whole
-  // viewport. Tune this if the boxes sit too high/low.
-  const BANNER_PX = 155;
-
+  // The overlay canvas IS the web viewport, which already excludes Chrome's
+  // tabs/address bar. The capture region (on the Python side) is set to the
+  // matching on-screen gameplay rect, so shapes map straight onto the full
+  // viewport here — no extra offset.
   if (document.getElementById(ID)) return;
 
   const cv = document.createElement("canvas");
@@ -42,13 +39,11 @@
 
   function draw() {
     const W = window.innerWidth, H = window.innerHeight;
-    const gh = Math.max(1, H - BANNER_PX); // game-canvas height below the banner
     ctx.clearRect(0, 0, W, H);
     for (const s of shapes) {
       if (s.kind !== "rect") continue;
-      // x spans full width; y is mapped into the canvas region below the banner.
-      const x = (s.x ?? 0.5) * W, y = BANNER_PX + (s.y ?? 0.5) * gh;
-      const w = (s.w ?? 0.1) * W, h = (s.h ?? 0.1) * gh;
+      const x = (s.x ?? 0.5) * W, y = (s.y ?? 0.5) * H;
+      const w = (s.w ?? 0.1) * W, h = (s.h ?? 0.1) * H;
       ctx.lineWidth = s.lineWidth || 3;
       ctx.strokeStyle = s.color || "#ff0000";
       ctx.strokeRect(x - w / 2, y - h / 2, w, h);
