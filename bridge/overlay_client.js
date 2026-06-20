@@ -11,7 +11,7 @@
 // Remove it later with:  window.__slitherbotOverlay.stop()
 
 (function () {
-  const WS_URL = "ws://localhost:8765";
+  const WS_URL = "ws://127.0.0.1:8765";  // IPv4 explicitly (avoids localhost->::1 mismatch)
   const ID = "slitherbot-overlay";
 
   const existing = document.getElementById(ID);

@@ -19,9 +19,17 @@ Shapes are relative (0..1) so they map to any viewport size:
 
 import asyncio
 import json
+import logging
 import sys
 
-HOST = "localhost"
+# Quiet the noisy "did not receive a valid HTTP request" tracebacks from port
+# probes / scanners hitting the listening socket — not real WS clients.
+logging.getLogger("websockets").setLevel(logging.CRITICAL)
+
+# Bind IPv4 loopback explicitly. Using "localhost" is a trap on Windows: it
+# can resolve to IPv6 ::1 while the browser connects to 127.0.0.1 (or vice
+# versa) and they never meet. Pin both ends to 127.0.0.1 to avoid that.
+HOST = "127.0.0.1"
 PORT = 8765
 
 
