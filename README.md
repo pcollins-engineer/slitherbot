@@ -94,12 +94,13 @@ This precursor tool focuses on color‑based filtering, pixel sampling, and visu
 The single‑file skeleton has been factored into runnable modules:
 
 ```
-slither-io-feature-extraction/
+slitherbot/
 │
 ├── main.py                  # GUI entry point: `python main.py`
 ├── preprocess.py            # auto-labeler CLI: `python preprocess.py`
 ├── demo_annotate.py         # draw labeled boxes per object (visual demo)
 ├── dd_capture_test.py       # Desktop Duplication capture smoke test (DPI-aware)
+├── live_view.py             # read-only live perception view: `python live_view.py`
 ├── requirements.txt
 │
 ├── gui/                     # Tkinter color-filter + eyedropper tool
@@ -125,6 +126,12 @@ slither-io-feature-extraction/
 │   ├── screen_model.py      # parametric per-frame scene summary
 │   ├── yolo_export.py       # write YOLO labels + data.yaml
 │   └── overlay.py           # debug visualization
+│
+├── perception/              # live perception (swappable backend: filters now, YOLO later)
+│   ├── __init__.py
+│   ├── types.py             # Pellet / Snake / Perception observations
+│   ├── color_filter_perceiver.py  # filter-based backend (frame -> Perception)
+│   └── overlay.py           # draw observations for the live view
 │
 ├── filters/                 # exported JSON filter configs (gitignored)
 ├── screenshots/             # *.png / *.jpg frames to inspect
@@ -310,9 +317,21 @@ Notes:
 
 ---
 
-## 🎮 Autonomous Controller (Plan — not yet implemented)
+## 🎮 Autonomous Controller
 
-The end goal: a simple **reactive** bot that hunts pellets and avoids enemy snake heads. Deliberately start dumb — **no localization / world map** — just react to what's on screen.
+The end goal: a simple **reactive** bot that hunts pellets and avoids enemy snake heads. Deliberately start dumb — **no localization / world map** — just react to what's on screen. Capture and perception are built; control is next.
+
+### Read-only live view (built)
+
+`live_view.py` is Phase 2: capture → perceive → draw, **no control**. It runs the swappable perception backend (color filters today, YOLO later — same `perceive(frame) -> Perception` interface) and overlays pellets (green), enemy snakes (red), your snake (yellow + a magenta head dot via the screen-center heuristic), with a live FPS/counts HUD.
+
+```bash
+python live_view.py                          # full screen
+python live_view.py --region 0 110 1919 970  # capture just the game canvas (recommended)
+python live_view.py --scale 0.6              # smaller display window
+```
+
+Verified on a static frame: 27 pellets, 2 snakes, correct YOU-vs-enemy tag, own-head at screen center. `q`/`Esc` to quit.
 
 ### Loop: perceive → decide → act
 
@@ -342,17 +361,19 @@ The end goal: a simple **reactive** bot that hunts pellets and avoids enemy snak
 - Runs inside the page, so it sets exactly what the game reads.
 - slither.io steers toward the mouse position **relative to your (centered) head** and boosts on mouse-down / space. Cleanest hook: each tick, set the game's internal mouse-target globals (commonly `window.xm` / `window.ym` = target offset from screen center) and toggle the boost state — rather than dispatching low-level OS events. Fall back to synthetic `mousemove` / `mousedown` events on the game canvas if those globals aren't reachable.
 
-### Components to build
+### Components
 
-- `capture/` — DPI-aware Desktop Duplication frame grabber.
-- `agent/policy.py` — pure function `detections → {angle, boost}` (the seek/avoid logic; unit-testable offline).
-- `bridge/server.py` — Python WebSocket server pushing commands at the frame rate.
-- `bridge/inject.js` — paste-into-console / userscript client: connect to the WS and apply `{angle, boost}` to the game every animation frame.
+- ✅ DPI-aware Desktop Duplication capture (`dd_capture_test.py`; benchmarked at 60fps, ~2.9ms jitter, JPG sink).
+- ✅ `perception/` — swappable `perceive(frame) -> Perception` (color-filter backend; YOLO backend later).
+- ✅ `live_view.py` — read-only capture→perceive→draw loop.
+- ⬜ `agent/policy.py` — pure function `Perception → {angle, boost}` (the seek/avoid logic; unit-testable offline).
+- ⬜ `bridge/server.py` — Python WebSocket server pushing commands at the frame rate.
+- ⬜ `bridge/inject.js` — paste-into-console / userscript client: connect to the WS and apply `{angle, boost}` to the game every animation frame.
 
 ### Phasing
 
-1. **Offline perception (now).** ✅ Validate detection on static frames (this repo: `preprocess.py`, `demo_annotate.py`).
-2. **Read-only live.** Capture + perceive live and draw an overlay, **no control** — confirm own-head + pellet/head detection hold up in motion.
+1. **Offline perception.** ✅ Validate detection on static frames (`preprocess.py`, `demo_annotate.py`).
+2. **Read-only live.** ✅ Capture + perceive live and draw an overlay, **no control** (`live_view.py`).
 3. **Closed loop.** Add the WebSocket bridge + in-page input; start with **pellet-seeking only**.
 4. **Avoidance.** Add enemy-head repulsion, then opportunistic boosting.
 5. **Later.** Swap color filters for the YOLO model; add real localization (hex lattice / minimap) for path planning.
@@ -365,7 +386,9 @@ The end goal: a simple **reactive** bot that hunts pellets and avoids enemy snak
 > - ✅ GUI color-filter + eyedropper tool (`main.py`)
 > - ✅ Auto-label preprocessing pipeline (`preprocess.py`) → YOLO labels, overlays, screen model
 > - ✅ Labeled visual demo (`demo_annotate.py`)
+> - ✅ DPI-aware Desktop Duplication capture, benchmarked (60fps / ~2.9ms jitter, JPG)
+> - ✅ Swappable perception layer + read-only live view (`live_view.py`)
 > - ⬜ Head/tail orientation via eye detection; mine-vs-enemy via camera-center cue
 > - ⬜ Hex-aware lattice solver + world-coordinate tracking across frames
-> - ⬜ Realtime capture (Desktop Duplication API) + WebSocket/in-page-JS control bridge
-> - ⬜ Reactive controller (seek pellets, avoid heads) and YOLO training scripts
+> - ⬜ WebSocket / in-page-JS control bridge + reactive policy (seek pellets, avoid heads)
+> - ⬜ YOLOv8x training scripts
