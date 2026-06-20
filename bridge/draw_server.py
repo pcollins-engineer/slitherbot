@@ -27,6 +27,7 @@ logging.getLogger("websockets").setLevel(logging.CRITICAL)  # hush port-scan noi
 HOST = "127.0.0.1"   # pin IPv4 (localhost can resolve to ::1 and miss the browser)
 WS_PORT = 8765
 HTTP_PORT = 8766
+SEND_INTERVAL = 1 / 30.0   # push to clients at ~30Hz so the overlay tracks live
 
 _state = {"type": "draw", "shapes": []}
 _lock = threading.Lock()
@@ -87,7 +88,7 @@ async def ws_handler(ws, *_):
     try:
         while True:
             await ws.send(state_json())
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(SEND_INTERVAL)
     except Exception:
         pass
 
