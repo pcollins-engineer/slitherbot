@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Generated artifacts
+filters/*.json
+screenshots/*
+!screenshots/.gitkeep
+dataset/
