@@ -18,6 +18,7 @@ capture_60fps/
 *.pt
 clips/
 runs/
-dataset_minimap/
+dataset_*/
+snake_labels/
 
 *.jpg
