@@ -21,4 +21,5 @@ runs/
 dataset_*/
 snake_labels/
 
-*.jpg*_probe.png
+*.jpg
+*_probe.png
