@@ -3,3 +3,4 @@ pillow
 numpy
 dxcam ; sys_platform == "win32"   # Desktop Duplication capture (live_view.py, capture tests)
 websockets                        # bridge/draw_server.py -> in-page overlay
+# ultralytics                     # optional: yolov8_debug.py + future training (pulls torch)
