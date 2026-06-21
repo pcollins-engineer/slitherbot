@@ -13,3 +13,8 @@ dataset/
 dd_capture_test.png
 capture_bench/
 capture_60fps/
+
+# Model weights / recordings / training runs
+*.pt
+clips/
+runs/

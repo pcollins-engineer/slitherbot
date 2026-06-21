@@ -1,28 +1,50 @@
-# 🐍 Slither.io Color Filter + Eyedropper GUI + YOLO Precursor Tool
+# 🐍 slitherbot — real-time Slither.io detection overlay
 
-## 🎯 Project Goal
+A real-time computer-vision overlay for **slither.io**: capture the game off the
+screen, detect entities, and **paint the detections back onto the live page** as
+a transparent overlay — at 30–60 fps.
 
-Build a Python GUI tool that helps prepare training data for a YOLO‑backboned neural net to detect Slither.io entities (snake heads, bodies, pellets, etc.).
-This precursor tool focuses on color‑based filtering, pixel sampling, and visual inspection of screenshots before moving to full YOLO annotation and training.
+```
+ ┌── Python ──────────────────────────────────────────────┐      ┌── Chrome ─────────┐
+ │ Desktop Duplication (dxcam) → perception → shapes (JSON)│  ws  │ extension service │
+ │                                                         │─────▶│ worker → overlay  │
+ └─────────────────────────────────────────────────────────┘      │ canvas on the page│
+                                                                   └───────────────────┘
+```
+
+### 🎥 What works today (the demo)
+
+Three interchangeable perception backends, each streaming boxes to the same in-page overlay:
+
+| Run this | Paints |
+| --- | --- |
+| `python live_overlay.py` | pellets (green), enemy snakes (red), **you** (yellow) + head dot — HSV color filters |
+| `python eye_tracker_live_overlay.py` | a box + **gaze arrow** on every snake **head**, colored & sized per snake (found via the white eyes — works for any color) |
+| `python yolov8_debug.py` | whatever a stock COCO YOLOv8 fires (spoiler: `clock`/`tie`/`bed`/`toothbrush` — i.e. nothing useful, which is *why* we fine-tune) |
+
+**Quickstart:**
+1. `pip install -r requirements.txt` (`dxcam`, `opencv-python`, `numpy`, `websockets`; `ultralytics` for the YOLO debug).
+2. Load the overlay extension once: `chrome://extensions` → Developer mode → **Load unpacked** → `extension/`.
+3. Open slither.io, then run one of the scripts above. Boxes appear on the game. Tune `--region` to your game canvas.
+
+> The hard part — getting Python to paint onto slither.io — is solved: page-context WebSockets are blocked and `fetch` to loopback hits Private Network Access, so the **extension's service worker** holds the WebSocket (a `chrome-extension://` secure context, exempt from both) and relays shapes to the overlay. Capture/overlay coordinate alignment and the DPI/black-frame gotchas are handled too.
+
+The original color-filter + eyedropper GUI and the YOLO auto-labeling pipeline (below) feed this: they produce the filters and the training data the overlay's perception uses.
 
 ---
 
 ## 🧩 Components Overview
 
+- Live Overlay (capture → perceive → paint): `live_overlay.py`, `eye_tracker_live_overlay.py`, `yolov8_debug.py` + `bridge/` + `extension/`.
+
 - Color Filter Engine
-  Applies HSV/RGB thresholding to Slither.io screenshots to isolate target objects (snake head, pellets, etc.).
+  Applies HSV thresholding to isolate target objects (snakes, pellets).
 
-- Eyedropper Tool
-  GUI lets you hover/click pixels to read RGB/HSV values, helping you tune filters.
+- Eyedropper Tool (`main.py`)
+  GUI to hover/click pixels and read RGB/HSV, for tuning filters.
 
-- Screenshot Loader
-  Loads PNG/JPG frames from disk for inspection.
-
-- Preview Panel
-  Shows original and filtered image side‑by‑side.
-
-- Export Settings
-  Saves chosen HSV/RGB ranges to JSON for later YOLO preprocessing.
+- Auto-label pipeline (`preprocess.py`)
+  Turns filters + frames into YOLO labels for fine-tuning.
 
 ---
 
