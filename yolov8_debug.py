@@ -41,23 +41,66 @@ def cls_color(i: int) -> str:
     return "#{:02X}{:02X}{:02X}".format(int(r * 255), int(g * 255), int(b * 255))
 
 
-def results_to_shapes(result, w, h):
-    shapes = []
+def extract_dets(result, w, h):
+    """Detections as dicts in normalized (0..1) center form."""
     names = result.names
+    out = []
     for box in result.boxes:
         cls = int(box.cls[0])
-        conf = float(box.conf[0])
         x1, y1, x2, y2 = box.xyxy[0].tolist()
-        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-        shapes.append({
-            "kind": "rect",
-            "x": cx / w, "y": cy / h, "w": (x2 - x1) / w, "h": (y2 - y1) / h,
-            "color": cls_color(cls), "label": f"{names[cls]} {conf:.2f}", "lineWidth": 2,
-        })
-    return shapes
+        out.append({"cls": cls, "name": names[cls], "conf": float(box.conf[0]),
+                    "x": (x1 + x2) / 2 / w, "y": (y1 + y2) / 2 / h,
+                    "w": (x2 - x1) / w, "h": (y2 - y1) / h})
+    return out
 
 
-def capture_loop(region, fps, model_name, conf, stop_evt):
+def dets_to_shapes(dets):
+    return [{
+        "kind": "rect", "x": d["x"], "y": d["y"], "w": d["w"], "h": d["h"],
+        "color": cls_color(d["cls"]), "label": f"{d['name']} {d['conf']:.2f}", "lineWidth": 2,
+    } for d in dets]
+
+
+class Smoother:
+    """EMA-smooths detections frame-to-frame so boxes stop jittering/pulsing.
+
+    Capturing the screen includes our own overlay, which creates a feedback
+    loop (the box drifts then snaps back). Smoothing toward a stable estimate
+    gives the loop a fixed point and kills the oscillation.
+    """
+
+    def __init__(self, alpha=0.35, match=0.06, max_missed=5):
+        self.alpha = alpha
+        self.match = match            # max normalized center distance to match a track
+        self.max_missed = max_missed
+        self.tracks = []
+
+    def update(self, dets):
+        for t in self.tracks:
+            t["seen"] = False
+        for d in dets:
+            best, bd = None, self.match
+            for t in self.tracks:
+                if t["cls"] != d["cls"] or t["seen"]:
+                    continue
+                dist = ((t["x"] - d["x"]) ** 2 + (t["y"] - d["y"]) ** 2) ** 0.5
+                if dist < bd:
+                    bd, best = dist, t
+            if best is None:
+                self.tracks.append({**d, "missed": 0, "seen": True})
+            else:
+                a = self.alpha
+                for k in ("x", "y", "w", "h"):
+                    best[k] = a * d[k] + (1 - a) * best[k]
+                best["conf"], best["name"], best["missed"], best["seen"] = d["conf"], d["name"], 0, True
+        for t in self.tracks:
+            if not t["seen"]:
+                t["missed"] += 1
+        self.tracks = [t for t in self.tracks if t["missed"] <= self.max_missed]
+        return [t for t in self.tracks if t["missed"] == 0]
+
+
+def capture_loop(region, fps, model_name, conf, smooth, stop_evt):
     enable_high_dpi()
     import dxcam
     from ultralytics import YOLO
@@ -68,6 +111,7 @@ def capture_loop(region, fps, model_name, conf, stop_evt):
 
     cam = dxcam.create(output_color="BGR")
     cam.start(region=region, target_fps=fps, video_mode=True)
+    smoother = Smoother() if smooth else None
     last = time.perf_counter()
     seen = Counter()
     frames = 0
@@ -83,14 +127,17 @@ def capture_loop(region, fps, model_name, conf, stop_evt):
             dt = time.perf_counter() - t0
             inst = 1.0 / dt if dt > 0 else 0.0
             hz = inst if hz == 0 else 0.9 * hz + 0.1 * inst  # smoothed inference rate
-            shapes = results_to_shapes(result, w, h)
+            dets = extract_dets(result, w, h)
+            if smoother is not None:
+                dets = smoother.update(dets)
+            shapes = dets_to_shapes(dets)
             shapes.append({"kind": "text", "x": 0.01, "y": 0.045,
-                           "text": f"YOLO {hz:.1f} Hz | {len(result.boxes)} det",
+                           "text": f"YOLO {hz:.1f} Hz | {len(dets)} det",
                            "color": "#00ff66", "font": "18px monospace"})
             draw_server.set_shapes(shapes)
             frames += 1
-            for b in result.boxes:
-                seen[result.names[int(b.cls[0])]] += 1
+            for d in dets:
+                seen[d["name"]] += 1
             if time.perf_counter() - last > 2.0:
                 top = ", ".join(f"{n}:{c}" for n, c in seen.most_common(8)) or "(nothing)"
                 print(f"  {frames} frames | classes seen so far: {top}")
@@ -107,12 +154,14 @@ def main():
     ap.add_argument("--fps", type=int, default=15)
     ap.add_argument("--region", type=int, nargs=4, metavar=("L", "T", "R", "B"),
                     default=[0, 155, 1920, 1000])
+    ap.add_argument("--no-smooth", action="store_true",
+                    help="disable temporal smoothing (boxes may pulse due to capture feedback)")
     args = ap.parse_args()
 
     region = tuple(args.region)
     stop_evt = threading.Event()
     threading.Thread(target=capture_loop,
-                     args=(region, args.fps, args.model, args.conf, stop_evt),
+                     args=(region, args.fps, args.model, args.conf, not args.no_smooth, stop_evt),
                      daemon=True).start()
 
     print(f"yolov8 debug: {args.model} @ conf {args.conf}, region {region}")
