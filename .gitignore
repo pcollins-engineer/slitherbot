@@ -18,5 +18,6 @@ capture_60fps/
 *.pt
 clips/
 runs/
+dataset_minimap/
 
 *.jpg
