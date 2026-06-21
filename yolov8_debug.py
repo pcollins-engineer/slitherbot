@@ -71,14 +71,23 @@ def capture_loop(region, fps, model_name, conf, stop_evt):
     last = time.perf_counter()
     seen = Counter()
     frames = 0
+    hz = 0.0
     try:
         while not stop_evt.is_set():
             frame = cam.get_latest_frame()
             if frame is None:
                 continue
             h, w = frame.shape[:2]
+            t0 = time.perf_counter()
             result = model.predict(frame, conf=conf, verbose=False)[0]
-            draw_server.set_shapes(results_to_shapes(result, w, h))
+            dt = time.perf_counter() - t0
+            inst = 1.0 / dt if dt > 0 else 0.0
+            hz = inst if hz == 0 else 0.9 * hz + 0.1 * inst  # smoothed inference rate
+            shapes = results_to_shapes(result, w, h)
+            shapes.append({"kind": "text", "x": 0.01, "y": 0.045,
+                           "text": f"YOLO {hz:.1f} Hz | {len(result.boxes)} det",
+                           "color": "#00ff66", "font": "18px monospace"})
+            draw_server.set_shapes(shapes)
             frames += 1
             for b in result.boxes:
                 seen[result.names[int(b.cls[0])]] += 1

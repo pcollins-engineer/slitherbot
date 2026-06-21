@@ -18,3 +18,5 @@ capture_60fps/
 *.pt
 clips/
 runs/
+
+*.jpg

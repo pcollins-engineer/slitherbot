@@ -52,6 +52,10 @@
           ctx.font = "16px monospace";
           ctx.fillText(s.label, x - w / 2, y - h / 2 - 6);
         }
+      } else if (s.kind === "text") {
+        ctx.fillStyle = s.color || "#ffffff";
+        ctx.font = s.font || "16px monospace";
+        ctx.fillText(s.text || "", (s.x ?? 0) * W, (s.y ?? 0) * H);
       } else if (s.kind === "arrow") {
         const x1 = (s.x1 ?? 0) * W, y1 = (s.y1 ?? 0) * H;
         const x2 = (s.x2 ?? 0) * W, y2 = (s.y2 ?? 0) * H;
